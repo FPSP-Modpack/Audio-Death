@@ -1,71 +1,88 @@
 package portablejim.audiodeath;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.List;
+
+import net.minecraftforge.common.MinecraftForge;
+
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
+import cpw.mods.fml.common.Loader;
 import cpw.mods.fml.common.Mod;
 import cpw.mods.fml.common.Mod.EventHandler;
-import cpw.mods.fml.common.SidedProxy;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
-import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.relauncher.Side;
-import net.minecraftforge.client.event.GuiOpenEvent;
-import net.minecraftforge.common.MinecraftForge;
-import org.apache.logging.log4j.Logger;
-import portablejim.audiodeath.proxy.IProxy;
 
-import java.io.File;
-import java.io.FileOutputStream;
+@Mod(
+    acceptableRemoteVersions = "*",
+    acceptedMinecraftVersions = "[1.7.10]",
+    modid = AudioDeath.MODID,
+    name = "Audio Death",
+    version = Tags.VERSION)
+public class AudioDeath {
 
-@Mod(modid = AudioDeath.MODID)
-public class AudioDeath
-{
-    public static final String MODID = "audiodeath";
+    static final String MODID = "audiodeath";
+    private static final Logger LOGGER = LogManager.getLogger(MODID);
+    private static final List<String> SOUNDS_JSON_TEXT;
 
-    @SidedProxy(clientSide = "portablejim.audiodeath.proxy.ClientProxy", serverSide = "portablejim.audiodeath.proxy.ServerProxy")
-    public static IProxy proxy;
-    public static Logger modLogger;
-
-    
-    @SuppressWarnings("UnusedDeclaration")
     @EventHandler
-    public void preInit(FMLPreInitializationEvent event)
-    {
-        if(event.getSide() == Side.CLIENT) {
-            MinecraftForge.EVENT_BUS.register(this);
+    public void preInit(FMLPreInitializationEvent event) {
+        if (event.getSide() != Side.CLIENT) {
+            LOGGER.info(
+                "Server environment detected: Audio Death is client-only and can safely be removed on the server.");
+            return;
         }
 
-        modLogger = event.getModLog();
+        MinecraftForge.EVENT_BUS.register(new ClientHandler());
 
-        File additionalResourcesFolder = new File(proxy.getMinecraftDir(), "mods-resourcepacks");
-        File audioDeathFolder = new File(additionalResourcesFolder, MODID);
-        File soundsFolder = new File(audioDeathFolder, "sounds");
-        try {
-            if(!soundsFolder.exists()) {
-                //noinspection ResultOfMethodCallIgnored
-                soundsFolder.mkdirs();
-            }
-            if(event.getSide() == Side.CLIENT) {
-                String soundsJson = "" +
-                        "{\n" +
-                        "  \"audiodeath.death\": {\n" +
-                        "    \"category\": \"record\",\n" +
-                        "    \"sounds\": [ \"audiodeath:deathSound\" ]\n" +
-                        "  }\n" +
-                        "}";
-                File soundsFile = new File(audioDeathFolder, "sounds.json");
-                if(!soundsFile.exists()) {
-                    FileOutputStream soundsFileStream = new FileOutputStream(soundsFile);
-                    soundsFileStream.write(soundsJson.getBytes("utf-8"));
-                    soundsFileStream.close();
-                }
-            }
+        Path rootDir = event.getModConfigurationDirectory()
+            .toPath()
+            .getParent();
+
+        if (Loader.isModLoaded("additionalresources")) {
+            createSoundsJSON(
+                rootDir.resolve("mods-resourcepacks")
+                    .resolve(MODID));
+            return;
         }
-        catch (Exception e) {
-            event.getModLog().error("Error creating required files and directories!", e);
+        if (Loader.isModLoaded("txloader")) {
+            createSoundsJSON(
+                rootDir.resolve("config")
+                    .resolve("txloader")
+                    .resolve("load")
+                    .resolve(MODID));
+            return;
+        }
+        if (Loader.isModLoaded("resourceloader")) {
+            createSoundsJSON(
+                rootDir.resolve("resources")
+                    .resolve(MODID));
         }
     }
 
-    @SuppressWarnings("UnusedDeclaration")
-    @SubscribeEvent
-    public void deathScreen(GuiOpenEvent event) {
-        proxy.handleDeath(event);
+    private static void createSoundsJSON(Path path) {
+        try {
+            Files.createDirectories(path.resolve("sounds"));
+            Path soundsJson = path.resolve("sounds.json");
+            if (Files.notExists(soundsJson)) {
+                Files.write(soundsJson, SOUNDS_JSON_TEXT);
+            }
+        } catch (IOException e) {
+            LOGGER.warn("Failed to create sounds dir or sounds.json!", e);
+        }
+    }
+
+    static {
+        SOUNDS_JSON_TEXT = Arrays.asList(
+            "{",
+            "  \"audiodeath.death\": {",
+            "    \"category\": \"record\",",
+            "    \"sounds\": [ \"audiodeath:deathSound\" ]",
+            "  }",
+            "}");
     }
 }
